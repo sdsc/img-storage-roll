@@ -28,11 +28,10 @@ Usage: $0 [-h|--help] PARAMETERS [OPTIONAL PARAMETERS]
  -y, --remotezpool=REMOTEZPOOL  Required, remote zpool name
  -u, --user=IMGUSER             Required, username to access zfs with
  -t, --throttle=THROTTLE        Optional, limit the transfer to a maximum of RATE bytes per second.
-                                          A suffix of "k", "m", "g", or "t" can be added  to  denote  kilobytes (*1024), 
+                                          A suffix of "K", "M", "G" can be added  to  denote  kilobytes (*1024), 
                                           megabytes, and so on.
-                                          Requires pv to be installed.
 
-Example: $0 -p tank -v vm-vc1-1-vol -r comet-01-10 -y tank -t 10m
+Example: $0 -p tank -v vm-vc1-1-vol -r comet-01-10 -y tank -u img-storage -t 10M
 EOT
 } 
 
@@ -65,14 +64,18 @@ if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit
 
 SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 
+THROTTLE_STR=
+if [ -n "$THROTTLE" ]; then
+    THROTTLE_STR="-x $THROTTLE"
+fi
+
 OUT=$((/sbin/zfs snap "$ZPOOL/$ZVOL@$SNAP_NAME") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error creating local snapshot $ZPOOL/$ZVOL@$SNAP_NAME ${OUT//$'\n'/ }" && exit 1 || :
 
-if [ -n "$THROTTLE" ]; then
-    OUT=$((/sbin/zfs send "$ZPOOL/$ZVOL@$SNAP_NAME" | pv -L "$THROTTLE" -q | su $IMGUSER -c "ssh $REMOTEHOST \"/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL\"")2>&1)
-else
-    OUT=$((/sbin/zfs send "$ZPOOL/$ZVOL@$SNAP_NAME" |                        su $IMGUSER -c "ssh $REMOTEHOST \"/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL\"") 2>&1)
-fi
+OUT=$((su $IMGUSER -c "/bin/bbcp -o -4 $THROTTLE_STR -s 1 -N io \
+       -T '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H /bin/bbcp' \
+       '/sbin/zfs send $ZPOOL/$ZVOL@$SNAP_NAME' \
+       '$REMOTEHOST:/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL'") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error uploading snapshot $REMOTEHOST:$ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
 
 #trim local snapshots

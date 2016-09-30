@@ -32,9 +32,8 @@ Usage: $0 [-h|--help] PARAMETERS [OPTIONAL PARAMETERS]
  -t, --throttle=THROTTLE        Optional, limit the transfer to a maximum of RATE bytes per second.
                                           A suffix of "k", "m", "g", or "t" can be added  to  denote  kilobytes (*1024), 
                                           megabytes, and so on.
-                                          Requires pv to be installed.
 
-Example: $0 -p tank -v vm-vc1-1-vol -r comet-01-10 -y tank -t 10m
+Example: $0 -p tank -v vm-vc1-1-vol -r comet-01-10 -y tank -u img-storage -t 10M
 EOT
 } 
 
@@ -67,6 +66,11 @@ if [ -z "$REMOTEHOST" ]; then echo "remotehost parameter is required"; help_mess
 if [ -z "$REMOTEZPOOL" ]; then echo "remotezpool parameter is required"; help_message; exit 1; fi
 if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit 1; fi
 
+THROTTLE_STR=
+if [ -n "$THROTTLE" ]; then
+    THROTTLE_STR="-x $THROTTLE"
+fi
+
 SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | tail -n 1 | sed -e 's/.\+@//g') 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error getting last snapshot name ${LOCAL_LAST_SNAP_NAME//$'\n'/ }" && exit 1 || :
@@ -75,11 +79,10 @@ OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs snap $REMOTEZPO
 [ "$?" != "0" ] &&  logger "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
 
-if [ -n "$THROTTLE" ]; then
-    OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME | pv -L $THROTTLE -q \"" | /sbin/zfs receive -F "$ZPOOL/$ZVOL") 2>&1)
-else
-    OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME                      \"" | /sbin/zfs receive -F "$ZPOOL/$ZVOL") 2>&1)
-fi
+OUT=$((su $IMGUSER -c "/bin/bbcp -o -4 $THROTTLE_STR -s 1 -N io \
+       -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H /bin/bbcp' \
+       '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
+       '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error downloading remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
 
