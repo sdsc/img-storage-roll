@@ -71,7 +71,7 @@ done
 #
 # 1 day of debugging to figure this out!
 touch /etc/udev/rules.d/91-zfs-permissions.rules
-/sbin/udevadm trigger
+/sbin/udevadm trigger --sysname-match=zfs
 
 # we need this only the first boot after the installation
 # after that the file will be there
