@@ -64,18 +64,27 @@ if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit
 
 SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 
-THROTTLE_STR=
-if [ -n "$THROTTLE" ]; then
-    THROTTLE_STR="-x $THROTTLE"
-fi
-
 OUT=$((/sbin/zfs snap "$ZPOOL/$ZVOL@$SNAP_NAME") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error creating local snapshot $ZPOOL/$ZVOL@$SNAP_NAME ${OUT//$'\n'/ }" && exit 1 || :
 
-OUT=$((su $IMGUSER -c "/bin/bbcp -o -4 $THROTTLE_STR -s 1 -N io \
-       -T '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H /bin/bbcp' \
-       '/sbin/zfs send $ZPOOL/$ZVOL@$SNAP_NAME' \
-       '$REMOTEHOST:/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL'") 2>&1)
+if type bbcp > /dev/null; then
+  THROTTLE_STR=
+  if [ -n "$THROTTLE" ]; then
+      THROTTLE_STR="-x $THROTTLE"
+  fi
+
+  OUT=$((su $IMGUSER -c "bbcp -o -4 $THROTTLE_STR -s 1 -N io \
+         -T '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H bbcp' \
+         '/sbin/zfs send $ZPOOL/$ZVOL@$SNAP_NAME' \
+         '$REMOTEHOST:/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL'") 2>&1)
+else
+  THROTTLE_STR=
+  if [ -n "$THROTTLE" ]; then
+      THROTTLE_STR=" | pv -L $THROTTLE -q "
+  fi
+
+  OUT=$((/sbin/zfs send "$ZPOOL/$ZVOL@$SNAP_NAME" $THROTTLE_STR | su $IMGUSER -c "ssh $REMOTEHOST \"/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL\"")2>&1)
+fi
 [ "$?" != "0" ] &&  logger "$0 - Error uploading snapshot $REMOTEHOST:$ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
 
 #trim local snapshots

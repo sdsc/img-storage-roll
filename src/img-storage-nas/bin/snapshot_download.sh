@@ -66,10 +66,6 @@ if [ -z "$REMOTEHOST" ]; then echo "remotehost parameter is required"; help_mess
 if [ -z "$REMOTEZPOOL" ]; then echo "remotezpool parameter is required"; help_message; exit 1; fi
 if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit 1; fi
 
-THROTTLE_STR=
-if [ -n "$THROTTLE" ]; then
-    THROTTLE_STR="-x $THROTTLE"
-fi
 
 SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | tail -n 1 | sed -e 's/.\+@//g') 2>&1)
@@ -78,11 +74,25 @@ LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZP
 OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs snap $REMOTEZPOOL/$ZVOL@$SNAP_NAME\"") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
+if type bbcp > /dev/null; then
+  THROTTLE_STR=
+  if [ -n "$THROTTLE" ]; then
+      THROTTLE_STR="-x $THROTTLE"
+  fi
 
-OUT=$((su $IMGUSER -c "/bin/bbcp -o -4 $THROTTLE_STR -s 1 -N io \
-       -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H /bin/bbcp' \
-       '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
-       '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
+  OUT=$((su $IMGUSER -c "bbcp -o -4 $THROTTLE_STR -s 1 -N io \
+         -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H bbcp' \
+         '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
+         '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
+else
+  THROTTLE_STR=
+  if [ -n "$THROTTLE" ]; then
+      THROTTLE_STR=" | pv -L $THROTTLE -q "
+  fi
+
+  OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME $THROTTLE_STR \"" | /sbin/zfs receive -F "$ZPOOL/$ZVOL") 2>&1)
+
+fi
 [ "$?" != "0" ] &&  logger "$0 - Error downloading remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
 
