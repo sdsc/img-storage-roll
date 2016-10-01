@@ -9,6 +9,12 @@
 
 #set -e
 
+# See roll's README.md for explanation
+BBCP="bbcp"
+if type /opt/bbcp/bin/bbcp > /dev/null 2>&1; then
+  BBCP="/opt/bbcp/bin/bbcp"
+fi
+
 PREFIX="IMG-STORAGE-"
 
 LOCAL_SNAPSHOTS_TRIM=10
@@ -67,14 +73,14 @@ SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 OUT=$((/sbin/zfs snap "$ZPOOL/$ZVOL@$SNAP_NAME") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error creating local snapshot $ZPOOL/$ZVOL@$SNAP_NAME ${OUT//$'\n'/ }" && exit 1 || :
 
-if type bbcp > /dev/null; then
+if type $BBCP > /dev/null 2>&1; then
   THROTTLE_STR=
   if [ -n "$THROTTLE" ]; then
       THROTTLE_STR="-x $THROTTLE"
   fi
 
-  OUT=$((su $IMGUSER -c "bbcp -o -4 $THROTTLE_STR -s 1 -N io \
-         -T '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H bbcp' \
+  OUT=$((su $IMGUSER -c "$BBCP -o -4 $THROTTLE_STR -s 1 -N io \
+         -T '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H $BBCP' \
          '/sbin/zfs send $ZPOOL/$ZVOL@$SNAP_NAME' \
          '$REMOTEHOST:/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL'") 2>&1)
 else

@@ -9,6 +9,12 @@
 
 #set -e # quit on errors
 
+# See roll's README.md for explanation
+BBCP="bbcp"
+if type /opt/bbcp/bin/bbcp > /dev/null 2>&1; then
+  BBCP="/opt/bbcp/bin/bbcp"
+fi
+
 PREFIX="IMG-STORAGE-"
 
 REMOTE_SNAPSHOTS_TRIM=10
@@ -74,14 +80,14 @@ LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZP
 OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs snap $REMOTEZPOOL/$ZVOL@$SNAP_NAME\"") 2>&1)
 [ "$?" != "0" ] &&  logger "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
-if type bbcp > /dev/null; then
+if type $BBCP > /dev/null 2>&1; then
   THROTTLE_STR=
   if [ -n "$THROTTLE" ]; then
       THROTTLE_STR="-x $THROTTLE"
   fi
 
-  OUT=$((su $IMGUSER -c "bbcp -o -4 $THROTTLE_STR -s 1 -N io \
-         -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H bbcp' \
+  OUT=$((su $IMGUSER -c "$BBCP -o -4 $THROTTLE_STR -s 1 -N io \
+         -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H $BBCP' \
          '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
          '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
 else
