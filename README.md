@@ -58,3 +58,9 @@ To install, execute these instructions on a Rocks frontend:
 % rocks create distro
 % rocks run roll img-storage | bash
 ```
+
+## Note: images sync
+
+We're using ZFS zvols to store VM images. The default mechanism for sending those between nodes is SSH. We experienced a bug in HPN-SSH when trying to send data while running a VM on the same node, which was causing a buffer overflow and termination of data transfer process. As a fix send and receive scripts are using bbcp (https://www.slac.stanford.edu/~abh/bbcp/) to send and receive data if one is found on NAS, and SSH otherwise. The scripts are trying to find bbcp in PATH and in /opt/bbcp/bin/bbcp (default location for COMET production cluster).
+
+You can find the mentioned scripts at src/img-storage-nas/bin/snapshot_*.sh.
