@@ -28,7 +28,7 @@ have Internet access and copy them into the `src/<package>` directories on your
 Rocks development machine.
 
 This roll requires the full OS roll installed on the machine.
-KVM roll and zfs-linux are also required.
+KVM roll, rabbitmq roll and zfs-linux are also required.
 
 
 ## Building
