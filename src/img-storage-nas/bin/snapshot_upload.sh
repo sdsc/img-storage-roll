@@ -21,7 +21,7 @@ LOCAL_SNAPSHOTS_TRIM=10
 
 TEMP=`getopt -o p:v:r:y:u:t:h --long zpool:,zvol:,remotehost:,remotezpool:,user:,throttle:,help -n 'snapshot_upload' -- "$@"`
 
-[ "$?" != "0" ] &&  logger "$0 - Called with wrong parameters" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Called with wrong parameters" && exit 1 || :
 
 eval set -- "$TEMP"
 function help_message {
@@ -71,7 +71,7 @@ if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit
 SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 
 OUT=$((/sbin/zfs snap "$ZPOOL/$ZVOL@$SNAP_NAME") 2>&1)
-[ "$?" != "0" ] &&  logger "$0 - Error creating local snapshot $ZPOOL/$ZVOL@$SNAP_NAME ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error creating local snapshot $ZPOOL/$ZVOL@$SNAP_NAME ${OUT//$'\n'/ }" && exit 1 || :
 
 if type $BBCP > /dev/null 2>&1; then
   THROTTLE_STR=
@@ -91,9 +91,9 @@ else
 
   OUT=$((/sbin/zfs send "$ZPOOL/$ZVOL@$SNAP_NAME" $THROTTLE_STR | su $IMGUSER -c "ssh $REMOTEHOST \"/sbin/zfs receive -F $REMOTEZPOOL/$ZVOL\"")2>&1)
 fi
-[ "$?" != "0" ] &&  logger "$0 - Error uploading snapshot $REMOTEHOST:$ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error uploading snapshot $REMOTEHOST:$ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
 
 #trim local snapshots
 OUT=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | head -n "-$LOCAL_SNAPSHOTS_TRIM" | xargs -r -l1 /sbin/zfs destroy) 2>&1)
-[ "$?" != "0" ] &&  logger "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
 
