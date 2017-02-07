@@ -1,4 +1,4 @@
 NAME = img-storage
-RELEASE = 3
+RELEASE = 4
 RPM.ARCH	= noarch
 
