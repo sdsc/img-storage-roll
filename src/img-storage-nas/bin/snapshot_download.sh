@@ -22,7 +22,7 @@ LOCAL_SNAPSHOTS_TRIM=10
 
 TEMP=`getopt -o p:v:r:y:u:t:dh --long zpool:,zvol:,remotehost:,remotezpool:,user:,throttle:,is_delete_remote,help -n 'snapshot_download' -- "$@"`
 
-[ "$?" != "0" ] &&  logger "$0 - Called with wrong parameters" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Called with wrong parameters" && exit 1 || :
 
 eval set -- "$TEMP"
 function help_message {
@@ -75,10 +75,10 @@ if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit
 
 SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
 LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | tail -n 1 | sed -e 's/.\+@//g') 2>&1)
-[ "$?" != "0" ] &&  logger "$0 - Error getting last snapshot name ${LOCAL_LAST_SNAP_NAME//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error getting last snapshot name ${LOCAL_LAST_SNAP_NAME//$'\n'/ }" && exit 1 || :
 
 OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs snap $REMOTEZPOOL/$ZVOL@$SNAP_NAME\"") 2>&1)
-[ "$?" != "0" ] &&  logger "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
 if type $BBCP > /dev/null 2>&1; then
   THROTTLE_STR=
@@ -99,7 +99,7 @@ else
   OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME $THROTTLE_STR \"" | /sbin/zfs receive -F "$ZPOOL/$ZVOL") 2>&1)
 
 fi
-[ "$?" != "0" ] &&  logger "$0 - Error downloading remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error downloading remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
 
 #trim remote snapshots
@@ -108,8 +108,8 @@ if $IS_DELETE_REMOTE ; then
 else
     OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs list -Hpr -t snapshot -o name -s creation $REMOTEZPOOL/$ZVOL | grep $PREFIX | head -n -$REMOTE_SNAPSHOTS_TRIM | xargs -r -l1 /sbin/zfs destroy\"") 2>&1)
 fi
-[ "$?" != "0" ] &&  logger "$0 - Error deleting remote snapshots $REMOTEHOST:$REMOTEZPOOL/$ZVOL  ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting remote snapshots $REMOTEHOST:$REMOTEZPOOL/$ZVOL  ${OUT//$'\n'/ }" && exit 1 || :
 
 #trim local snapshots
 OUT=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | grep $PREFIX | head -n "-$LOCAL_SNAPSHOTS_TRIM" | xargs -r -l1 /sbin/zfs destroy) 2>&1)
-[ "$?" != "0" ] &&  logger "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
+[ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
