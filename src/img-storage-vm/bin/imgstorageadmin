@@ -81,7 +81,7 @@ def main(argv):
                 for line in iscsi_targets: 
                     print linenum, line
                     linenum+=1
-                ans_arr = raw_input("Which target would you like to delete? (number)")
+                ans_arr = raw_input("Which target would you like to delete? (number)").split()
                 if(ans_arr):
                     for ans in ans_arr:
                         iscsi_target = iscsi_targets[int(ans)].split(' ')[1]
@@ -105,7 +105,7 @@ def main(argv):
             for line in lvms: 
                 print linenum, line
                 linenum += 1
-            ans_arr = raw_input("Which lvm would you like to destroy? (number)")
+            ans_arr = raw_input("Which lvm would you like to destroy? (number)").split()
             if(ans_arr):
                 for ans in ans_arr:
                     lvm = lvms[int(ans)].split(' ')[0][:-1]
@@ -122,7 +122,7 @@ def main(argv):
             for line in zvols: 
                 print linenum, line
                 linenum += 1
-            ans_arr = raw_input("Which zvol would you like to delete? (number)")
+            ans_arr = raw_input("Which zvol would you like to delete? (number)").split()
             if(ans_arr):
                 for ans in ans_arr:
                     zvol = zvols[int(ans)]
