@@ -154,5 +154,7 @@ def isFileUsed(file):
         return True
 
 def nodenameToDomain(full_nodename, domain):
+    if(not domain):
+        return full_nodename
     nodename = full_nodename.split(".")[0]
     return "%s.%s"%(nodename, domain)

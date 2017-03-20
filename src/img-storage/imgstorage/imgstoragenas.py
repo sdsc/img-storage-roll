@@ -900,7 +900,7 @@ class NasDaemon:
         args = ['/opt/rocks/bin/snapshot_upload.sh', 
                 '-p', zpool, 
                 '-v', zvol, 
-                '-r', remotehost,
+                '-r', nodenameToDomain(remotehost, self.ib_net),
                 '-y', remotezpool,
                 '-u', self.imgUser]
         upload_speed = self.getZvolAttr(zvol,'uploadspeed')
@@ -921,7 +921,7 @@ class NasDaemon:
         args = ['/opt/rocks/bin/snapshot_download.sh', 
                     '-p', zpool, 
                     '-v', zvol, 
-                    '-r', remotehost,
+                    '-r', nodenameToDomain(remotehost, self.ib_net),
                     '-y', remotezpool,
                     '-u', self.imgUser]
         if(is_delete_remote):
