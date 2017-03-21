@@ -86,7 +86,7 @@ if type $BBCP > /dev/null 2>&1; then
       THROTTLE_STR="-x $THROTTLE"
   fi
 
-  OUT=$((su $IMGUSER -c "$BBCP -o -4 $THROTTLE_STR -s 1 -N io \
+  OUT=$((su $IMGUSER -c "$BBCP -o -z -4 $THROTTLE_STR -s 1 -N io \
          -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H $BBCP' \
          '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
          '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
