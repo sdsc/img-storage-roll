@@ -17,7 +17,7 @@ fi
 
 PREFIX="IMG-STORAGE-"
 
-LOCAL_SNAPSHOTS_TRIM=10
+LOCAL_SNAPSHOTS_TRIM=3
 
 TEMP=`getopt -o p:v:r:y:u:t:h --long zpool:,zvol:,remotehost:,remotezpool:,user:,throttle:,help -n 'snapshot_upload' -- "$@"`
 
