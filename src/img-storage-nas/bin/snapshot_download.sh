@@ -30,18 +30,22 @@ cat << EOT
 Usage: $0 [-h|--help] PARAMETERS [OPTIONAL PARAMETERS]
 
  -p, --zpool=ZPOOL              Required, local zpool name
- -v, --zvol=ZVOL                Required, zvol name 
+ -v, --zvol=ZVOL                Required, zvol name
  -r, --remotehost=REMOTEHOST    Required, compute host name
  -y, --remotezpool=REMOTEZPOOL  Required, remote zpool name
  -u, --user=IMGUSER             Required, username to access zfs with
  -d, --is_delete_remote         Optional, deletes the remote zvol on successful sync.
  -t, --throttle=THROTTLE        Optional, limit the transfer to a maximum of RATE bytes per second.
-                                          A suffix of "k", "m", "g", or "t" can be added  to  denote  kilobytes (*1024), 
+                                          A suffix of "k", "m", "g", or "t" can be added  to  denote  kilobytes (*1024),
                                           megabytes, and so on.
 
 Example: $0 -p tank -v vm-vc1-1-vol -r comet-01-10 -y tank -u img-storage -t 10M
 EOT
-} 
+}
+
+# if you want to freeze some images, add a hostlist expression for those to the SKIP_ZVOLS variable.
+# this requires python hostlist package to be installed and accessible
+SKIP_ZVOLS=
 
 IS_DELETE_REMOTE=false
 ZPOOL=
@@ -73,43 +77,63 @@ if [ -z "$REMOTEZPOOL" ]; then echo "remotezpool parameter is required"; help_me
 if [ -z "$IMGUSER" ]; then echo "user parameter is required"; help_message; exit 1; fi
 
 
-SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
-LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | tail -n 1 | sed -e 's/.\+@//g') 2>&1)
-[ "$?" != "0" ] &&  logger -p user.error "$0 - Error getting last snapshot name ${LOCAL_LAST_SNAP_NAME//$'\n'/ }" && exit 1 || :
 
-OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs snap $REMOTEZPOOL/$ZVOL@$SNAP_NAME\"") 2>&1)
-[ "$?" != "0" ] &&  logger -p user.error "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
+HOSTS_NUM=0
 
-if type $BBCP > /dev/null 2>&1; then
-  THROTTLE_STR=
-  if [ -n "$THROTTLE" ]; then
-      THROTTLE_STR="-x $THROTTLE"
-  fi
+if [[ $SKIP_ZVOLS ]] ; then
+        export PYTHONROOT=/opt/python
+        export PATH=/opt/python/bin:$PATH
+        export LD_LIBRARY_PATH=/opt/python/lib:$LD_LIBRARY_PATH
+        export LIBPATH=/opt/python/lib:$LIBPATH
 
-  OUT=$((su $IMGUSER -c "$BBCP -o -z -4 $THROTTLE_STR -s 1 -N io \
-         -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H $BBCP' \
-         '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
-         '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
-else
-  THROTTLE_STR=
-  if [ -n "$THROTTLE" ]; then
-      THROTTLE_STR=" | pv -L $THROTTLE -q "
-  fi
-
-  OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME $THROTTLE_STR \"" | /sbin/zfs receive -F "$ZPOOL/$ZVOL") 2>&1)
-
+        HOSTS_NUM=`hostlist -ni $ZVOL $SKIP_ZVOLS`
 fi
-[ "$?" != "0" ] &&  logger -p user.error "$0 - Error downloading remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
 
+#ZFS syncs the state to the disk ~ every 5 seconds. A snapshot might have not all data, and destroying not always works within 5 seconds of unmounting everything.
+sleep 5
 
-#trim remote snapshots
-if $IS_DELETE_REMOTE ; then
-    OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs destroy -r $REMOTEZPOOL/$ZVOL\"") 2>&1)
-else
-    OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs list -Hpr -t snapshot -o name -s creation $REMOTEZPOOL/$ZVOL | grep $PREFIX | head -n -$REMOTE_SNAPSHOTS_TRIM | xargs -r -l1 /sbin/zfs destroy\"") 2>&1)
+if [[ $(($HOSTS_NUM + 0)) == 0 ]] ; then
+        SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
+        LOCAL_LAST_SNAP_NAME=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | tail -n 1 | sed -e 's/.\+@//g') 2>&1)
+        [ "$?" != "0" ] &&  logger -p user.error "$0 - Error getting last snapshot name ${LOCAL_LAST_SNAP_NAME//$'\n'/ }" && exit 1 || :
+
+        OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs snap $REMOTEZPOOL/$ZVOL@$SNAP_NAME\"") 2>&1)
+        [ "$?" != "0" ] &&  logger -p user.error "$0 - Error creating remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
+
+        if type $BBCP > /dev/null 2>&1; then
+          THROTTLE_STR=
+          if [ -n "$THROTTLE" ]; then
+              THROTTLE_STR="-x $THROTTLE"
+          fi
+
+                  OUT=$((su $IMGUSER -c "$BBCP -o -z -4 $THROTTLE_STR -s 1 -N io \
+                         -S '/usr/bin/ssh -x -a -oFallBackToRsh=no %4 %I -l %U %H $BBCP' \
+                         '$REMOTEHOST:/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME' \
+                         '/sbin/zfs receive -F $ZPOOL/$ZVOL'") 2>&1)
+
+        else
+          THROTTLE_STR=
+          if [ -n "$THROTTLE" ]; then
+              THROTTLE_STR=" | pv -L $THROTTLE -q "
+          fi
+
+          OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs send -I $REMOTEZPOOL/$ZVOL@$LOCAL_LAST_SNAP_NAME $REMOTEZPOOL/$ZVOL@$SNAP_NAME $THROTTLE_STR \"" | /sbin/zfs receive -F "$ZPOOL/$ZVOL") 2>&1)
+
+        fi
+        [ "$?" != "0" ] &&  logger -p user.error "$0 - Error downloading remote snapshot $REMOTEHOST:$REMOTEZPOOL/$ZVOL@$SNAP_NAME  ${OUT//$'\n'/ }" && exit 1 || :
+
+        #trim remote snapshots
+        if $IS_DELETE_REMOTE ; then
+            OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs destroy -r $REMOTEZPOOL/$ZVOL\"") 2>&1)
+        else
+            OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs list -Hpr -t snapshot -o name -s creation $REMOTEZPOOL/$ZVOL | grep $PREFIX | head -n -$REMOTE_SNAPSHOTS_TRIM | xargs -r -l1 /sbin/zfs destroy\"") 2>&1)
+        fi
+        [ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting remote snapshots $REMOTEHOST:$REMOTEZPOOL/$ZVOL  ${OUT//$'\n'/ }" && exit 1 || :
+
+        #trim local snapshots
+        OUT=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | grep $PREFIX | head -n "-$LOCAL_SNAPSHOTS_TRIM" | xargs -r -l1 /sbin/zfs destroy) 2>&1)
+        [ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
+elif $IS_DELETE_REMOTE ; then
+        OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs destroy -r $REMOTEZPOOL/$ZVOL\"") 2>&1)
+        [ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting remote snapshots $REMOTEHOST:$REMOTEZPOOL/$ZVOL  ${OUT//$'\n'/ }" && exit 1 || :
 fi
-[ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting remote snapshots $REMOTEHOST:$REMOTEZPOOL/$ZVOL  ${OUT//$'\n'/ }" && exit 1 || :
-
-#trim local snapshots
-OUT=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | grep $PREFIX | head -n "-$LOCAL_SNAPSHOTS_TRIM" | xargs -r -l1 /sbin/zfs destroy) 2>&1)
-[ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
