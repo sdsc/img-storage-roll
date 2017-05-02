@@ -46,6 +46,11 @@ EOT
 # if you want to freeze some images, add a hostlist expression for those to the SKIP_ZVOLS variable.
 # this requires python hostlist package to be installed and accessible
 SKIP_ZVOLS=
+FREEZE_FILE=/opt/rocks/etc/freeze_zvols
+if [[ -f $FREEZE_FILE && -r $FREEZE_FILE  ]]
+then
+  SKIP_ZVOLS=`cat $FREEZE_FILE`
+fi
 
 IS_DELETE_REMOTE=false
 ZPOOL=
