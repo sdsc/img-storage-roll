@@ -95,7 +95,7 @@ if [[ $SKIP_ZVOLS ]] ; then
 fi
 
 #ZFS syncs the state to the disk ~ every 5 seconds. A snapshot might have not all data, and destroying not always works within 5 seconds of unmounting everything.
-sleep 5
+sleep 6
 
 if [[ $(($HOSTS_NUM + 0)) == 0 ]] ; then
         SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
