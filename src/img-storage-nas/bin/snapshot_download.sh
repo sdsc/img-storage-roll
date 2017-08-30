@@ -95,7 +95,9 @@ if [[ $SKIP_ZVOLS ]] ; then
 fi
 
 #ZFS syncs the state to the disk ~ every 5 seconds. A snapshot might have not all data, and destroying not always works within 5 seconds of unmounting everything.
-sleep 6
+if $IS_DELETE_REMOTE ; then
+	sleep 7
+fi
 
 if [[ $(($HOSTS_NUM + 0)) == 0 ]] ; then
         SNAP_NAME=$PREFIX`/usr/bin/uuidgen`
@@ -129,7 +131,7 @@ if [[ $(($HOSTS_NUM + 0)) == 0 ]] ; then
 
         #trim remote snapshots
         if $IS_DELETE_REMOTE ; then
-            OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs destroy -r $REMOTEZPOOL/$ZVOL\"") 2>&1)
+            OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"while \\\`/sbin/zfs list -o name -t volume -H | grep -q $REMOTEZPOOL/$ZVOL\\\`; do sleep 2 && /sbin/zfs destroy -R $REMOTEZPOOL/$ZVOL; done\"") 2>&1)
         else
             OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs list -Hpr -t snapshot -o name -s creation $REMOTEZPOOL/$ZVOL | grep $PREFIX | head -n -$REMOTE_SNAPSHOTS_TRIM | xargs -r -l1 /sbin/zfs destroy\"") 2>&1)
         fi
@@ -139,6 +141,6 @@ if [[ $(($HOSTS_NUM + 0)) == 0 ]] ; then
         OUT=$((/sbin/zfs list -Hpr -t snapshot -o name -s creation "$ZPOOL/$ZVOL" | grep $PREFIX | head -n "-$LOCAL_SNAPSHOTS_TRIM" | xargs -r -l1 /sbin/zfs destroy) 2>&1)
         [ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting local snapshots $ZPOOL/$ZVOL ${OUT//$'\n'/ }" && exit 1 || :
 elif $IS_DELETE_REMOTE ; then
-        OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"/sbin/zfs destroy -f -r $REMOTEZPOOL/$ZVOL\"") 2>&1)
+        OUT=$((/bin/su $IMGUSER -c "/usr/bin/ssh $REMOTEHOST \"while \\\`/sbin/zfs list -o name -t volume -H | grep -q $REMOTEZPOOL/$ZVOL\\\`; do sleep 2 && /sbin/zfs destroy -R $REMOTEZPOOL/$ZVOL; done\"") 2>&1)
         [ "$?" != "0" ] &&  logger -p user.error "$0 - Error deleting remote snapshots $REMOTEHOST:$REMOTEZPOOL/$ZVOL  ${OUT//$'\n'/ }" && exit 1 || :
 fi
