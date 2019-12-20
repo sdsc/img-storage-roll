@@ -3,7 +3,7 @@
 #	/etc/rc.d/init.d/img-storage-vm
 #
 # chkconfig: 2345 99 05
-# pidfile: /var/run/imgstoragedaemon.pid
+# pidfile: /var/run/img-storage-vm.pid
 
 # Source function library.
 . /etc/init.d/functions
