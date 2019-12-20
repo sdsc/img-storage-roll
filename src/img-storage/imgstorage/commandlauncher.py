@@ -63,6 +63,15 @@ import uuid
 from rocks.util import CommandError
 import logging
 from rabbitmqclient import RabbitMQLocator
+import NodeConfig
+
+from struct import unpack
+
+from Crypto.Hash import SHA256
+from base64 import b64encode
+from rabbitmqclient.crypto import *
+from rabbitmqclient.config import *
+
 
 logging.basicConfig()
 
@@ -70,11 +79,22 @@ logging.basicConfig()
 class CommandLauncher:
 
     def __init__(self):
+        self.nc = NodeConfig.NodeConfig()
         self.USERNAME = "img-storage"
-        loc = RabbitMQLocator(self.USERNAME)
-        self.RABBITMQ_PW = loc.RABBITMQ_PW
+        loc = RabbitMQLocator(self.USERNAME, read_pw = False)
         self.RABBITMQ_URL = loc.RABBITMQ_URL
         self.ret_message = None
+        self.encryption = self.nc.DATA.get("use_encryption", False)
+        self.ssl_options = self.nc.DATA.get("ssl_options", False)
+        if(self.ssl_options):
+            self.ssl_options = json.loads(self.ssl_options)
+
+        if(self.encryption):
+            with open(PRIVATE_KEY_FILE, 'r') as f:
+                privKey = RSA.importKey(f.read())
+                self.signer = PKCS1_PSS.new(privKey)
+            self.clusterKey = read_cluster_key()
+        self.replayNonce = unpack('Q', os.urandom(8))[0]
 
     def callAddHostStoragemap(
         self,
@@ -85,6 +105,7 @@ class CommandLauncher:
 	remotepool,
         size,
 	sync,
+	initiator,
         ):
         message = {
             'action': 'map_zvol',
@@ -94,6 +115,7 @@ class CommandLauncher:
             'size': size,
 	    'remotepool': remotepool,
 	    'sync': sync,
+	    'initiator': initiator,
             }
         self.callCommand(message, nas)
         block_dev = self.ret_message['bdev']
@@ -135,6 +157,11 @@ class CommandLauncher:
 	message.update(attrs)
         self.callCommand(message, nas)
 
+    def callListInitiator(self, host):
+        message = {'action': 'list_initiator'}
+        self.callCommand(message, host)
+        return self.ret_message['body']
+
     def callListAttrs(self, nas):
         message = {'action': 'get_attrs'}
         self.callCommand(message, nas)
@@ -149,11 +176,14 @@ class CommandLauncher:
         self.callCommand(message, nas)
 
     def callCommand(self, message, nas):
-        credentials = pika.PlainCredentials(self.USERNAME, self.RABBITMQ_PW)
+        credentials = pika.credentials.ExternalCredentials()
         parameters = pika.ConnectionParameters(self.RABBITMQ_URL,
-                                                       5672,
+                                                       5671,
                                                        self.USERNAME,
-                                                       credentials)
+                                                       credentials,
+                                                       ssl=True,
+                                                       ssl_options=self.ssl_options
+                                                       )
         connection = \
             pika.BlockingConnection(parameters)
 
@@ -170,11 +200,28 @@ class CommandLauncher:
 
             # Send a message
 
+            expiration = None if not self.encryption else MSG_TTL
+            properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
+                    , reply_to=zvol_manage_queue, message_id=str(self.replayNonce),
+                    delivery_mode=1, type="",
+                    timestamp = time.time(), expiration=expiration)
+            message = json.dumps(message, ensure_ascii=True)
+
+            if(self.encryption):
+                message = clusterEncrypt(self.clusterKey, message)
+
+                digest = digestMessage(message, properties)
+
+                sig = self.signer.sign(digest)
+
+                properties.headers = dict(signature = b64encode(sig))
+
             if channel.basic_publish(exchange='rocks.vm-manage',
                     routing_key=nas, mandatory=True,
-                    body=json.dumps(message, ensure_ascii=True),
-                    properties=pika.BasicProperties(content_type='application/json'
-                    , delivery_mode=1, reply_to=zvol_manage_queue)):
+                    body=message,
+                    properties=properties):
+
+                self.replayNonce += 1
 
                 channel.basic_consume(self.on_message,
                         zvol_manage_queue)
@@ -195,9 +242,15 @@ class CommandLauncher:
         self,
         channel,
         method_frame,
-        header_frame,
+        properties,
         body,
         ):
         channel.basic_ack(delivery_tag=method_frame.delivery_tag)
         channel.stop_consuming()
+        if(self.encryption):
+            ciphertext = verifyMessage(body, properties)
+            if(ciphertext is None):
+                raise CommandError("Message verification failed")
+            body = clusterDecrypt(self.clusterKey, body)
+        
         self.ret_message = json.loads(body)

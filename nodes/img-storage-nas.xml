@@ -22,20 +22,28 @@
 	<package>foundation-python-daemon</package>
 	<package>foundation-python-lockfile</package>
 	<package>img-storage-nas</package>
-	<package>scsi-target-utils</package>
+	<package cond="rocks_version_major == 6">scsi-target-utils</package>
+	<package cond="rocks_version_major == 7">targetcli</package>
 	<package>iscsi-initiator-utils</package>
 
-<post>
-mkdir /var/log/rocks
+<post cond="rocks_version_major == 6">
 /sbin/chkconfig tgtd on
 /sbin/chkconfig iscsid on
 /sbin/chkconfig img-storage-nas on
+</post>
 
+<post cond="rocks_version_major == 7">
+/usr/bin/systemctl enable target 
+/usr/bin/systemctl enable iscsid 
+/usr/bin/systemctl enable img-storage-nas
+</post>
 
+<post>
+mkdir /var/log/rocks
 <eval mode="xml">
 /opt/rocks/bin/rocks report host imgstorage &hostname;
 </eval>
-<file name="/etc/rc.d/rocksconfig.d/post-99-restart-img-storage" perms="755">
+<file name="/etc/rc.d/rocksconfig.d/post-55-restart-img-storage" perms="755">
 
 #!/bin/bash
 #
@@ -49,8 +57,38 @@ done
 
 # we need this only the first boot after the installation
 # after that the file will be there
-rm /etc/rc.d/rocksconfig.d/post-99-restart-img-storage
+rm /etc/rc.d/rocksconfig.d/post-55-restart-img-storage
 </file>
+
+
+<file name="/etc/udev/rules.d/91-zfs-permissions.rules" perms="644">
+ACTION=="add", KERNEL=="zfs", MODE="0660", GROUP="&imgstorage-group;"
+</file>
+
+<file name="/etc/rc.d/rocksconfig.d/post-50-restart-udev-zfs-perm" perms="755">
+#!/bin/bash
+#
+# while for the img-storage user to appear
+
+while [ ! `id -u &imgstorage-user;` ];do
+	sleep 5
+done
+
+# so udevd sees that there is not img-storage group at boot time
+# then it caches that value for the 91-zfs-permissions.rules
+#
+# to stop this behaviour we need to touch the file
+# so udev will reparse the rules and properly load the group
+#
+# 1 day of debugging to figure this out!
+touch /etc/udev/rules.d/91-zfs-permissions.rules
+/sbin/udevadm trigger --sysname-match=zfs
+
+# we need this only the first boot after the installation
+# after that the file will be there
+rm /etc/rc.d/rocksconfig.d/post-50-restart-udev-zfs-perm
+</file>
+
 
 </post>
 

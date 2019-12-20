@@ -10,7 +10,7 @@ It includes:
 - pythondaemon, lockfile - should be provided by base roll
 - rocks-command-imagestorage - set of rocks commands
 - img-storage-nas - the NAS daemon
-- img-storage-vm - the Compute node daemon
+- img-storage-vm - the Client node daemon
 - img-storage - the common library containing the code for all daemons
 
 For more information you can read the user guide at:
@@ -28,7 +28,7 @@ have Internet access and copy them into the `src/<package>` directories on your
 Rocks development machine.
 
 This roll requires the full OS roll installed on the machine.
-KVM roll and zfs-linux are also required.
+KVM roll, rabbitmq roll and zfs-linux are also required.
 
 
 ## Building
@@ -58,3 +58,11 @@ To install, execute these instructions on a Rocks frontend:
 % rocks create distro
 % rocks run roll img-storage | bash
 ```
+
+## Note: images sync
+
+We're using ZFS zvols to store VM images. The default mechanism for sending those between nodes is SSH. We experienced a bug in HPN-SSH when trying to send data while running a VM on the same node, which was causing a buffer overflow and termination of data transfer process. As a fix send and receive scripts are using bbcp (https://www.slac.stanford.edu/~abh/bbcp/) to send and receive data if one is found on NAS, and SSH otherwise. The scripts are trying to find bbcp in PATH and in /opt/bbcp/bin/bbcp (default location for COMET production cluster).
+
+You can find the mentioned scripts at src/img-storage-nas/bin/snapshot_*.sh.
+
+The RabbitMQ roll makes service quit if there's no connection for some time. This allows better handling the problems. Refer to RabbitMQ roll docs for more info.

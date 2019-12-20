@@ -109,12 +109,9 @@ def setupLogger(logger):
     handler = logging.FileHandler('/var/log/rocks/img-storage.log')
     handler.setFormatter(formatter)
 
-    # for log_name in (logger, 'pika.channel', 'pika.connection',
-    # 'rabbit_client.RabbitMQClient'):
-
-    for log_name in [logger, 'rabbit_client.RabbitMQCommonClient',
+    for log_name in [logger, 'rabbitmqclient',
                      'tornado.application']:
-        logging.getLogger(log_name).setLevel(logging.DEBUG)
+        logging.getLogger(log_name).setLevel(logging.INFO)
         logging.getLogger(log_name).addHandler(handler)
 
     return handler
@@ -156,14 +153,8 @@ def isFileUsed(file):
 
         return True
 
-
-class NodeConfigRocks:
-    db = rocks.db.helper.DatabaseHelper()
-    db.connect()
-    NODE_NAME = db.getHostname()
-    IB_NET = db.getHostAttr(NODE_NAME, 'IB_net')
-    VM_CONTAINER_ZPOOL = db.getHostAttr(NODE_NAME,
-                                        'vm_container_zpool')
-    IMG_SYNC_WORKERS = db.getHostAttr(NODE_NAME,
-                                      'img_sync_workers')
-    db.close()
+def nodenameToDomain(full_nodename, domain):
+    if(not domain):
+        return full_nodename
+    nodename = full_nodename.split(".")[0]
+    return "%s.%s"%(nodename, domain)

@@ -66,7 +66,7 @@
 # msg formats
 #
 # Receive Messages:
-#       map_zvol:  zpool, zvol, remotehost, remotepoool, sync
+#       map_zvol:  zpool, zvol, remotehost, remotepoool, sync, initiator 
 #       unmap_zvol:  zvol     XXX: really should have pool, too.
 #       del_zvol: zvol, zpool
 #       list_zvols:
@@ -100,6 +100,7 @@ import sys
 import signal
 import pika
 import socket
+import rocks
 import rocks.util
 import uuid
 
@@ -109,7 +110,7 @@ from tornado.gen import Task, Return, coroutine
 import tornado.process
 
 
-def get_iscsi_targets():
+def get_iscsi_targets_orig():
     """return a list of all the active target the dictionary keys
     are the target names and the data is their associated TID"""
 
@@ -117,9 +118,20 @@ def get_iscsi_targets():
     ret = []
     for line in out:
         if line.startswith('Target ') and len(line.split()) >= 2:
-            ret.append(line.split()[2])
+            ret.append(line.split()[1])
     return ret
 
+def get_iscsi_targets():
+    """return a list of all the active target the dictionary keys
+    are the target names and the data is their associated TID"""
+
+    out = runCommand(['targetcli', 'iscsi/', 'ls'])
+    print out
+    ret = []
+    for line in out:
+        if 'TPG' in line and len(line.split()) >= 2:
+            ret.append(line.split()[1])
+    return ret
 
 STREAM = tornado.process.Subprocess.STREAM
 
@@ -201,6 +213,12 @@ class NasDaemon:
         self.SYNC_PULL_TIMEOUT = 60
         # the default SYNC_PULL is 5 minutes
         self.SYNC_PULL_DEFAULT = 60 * 5
+
+        self.ssl_options = self.nc.DATA.get("ssl_options", False)
+        if(self.ssl_options):
+            self.ssl_options = json.loads(self.ssl_options)
+        self.use_encryption = self.nc.DATA.get("use_encryption", False)
+        self.secur_server = self.nc.DATA.get("secur_server", False)
 
         self.logger = \
             logging.getLogger('imgstorage.imgstoragenas.NasDaemon')
@@ -420,7 +438,13 @@ class NasDaemon:
                                                     'direct', "img-storage", "img-storage",
                                                     self.process_message, lambda a:
                                                     self.startup(),
-                                                    routing_key=self.nc.NODE_NAME)
+                                                    routing_key=self.nc.NODE_NAME,
+                                                    ssl = True,
+                                                    ssl_options = self.ssl_options,
+                                                    encryption = self.use_encryption,
+                                                    frontend = self.nc.FRONTEND_NAME,
+                                                    secur_server = self.secur_server
+                                                    )
         self.queue_connector.run()
 
     def failAction(
@@ -450,6 +474,12 @@ class NasDaemon:
         zpool_name = message['zpool']
         zvol_name = message['zvol']
         sync = message['sync']
+        try:
+             initiator = message['initiator']
+        except:
+             raise ActionError(
+                'Error when setting up: no initiator specified')
+  
 
         # print "XXX map_zvol (message): ", message
         self.logger.debug('Setting zvol %s' % zvol_name)
@@ -500,8 +530,7 @@ class NasDaemon:
 
                 if self.ib_net:
                     try:
-                        ip = socket.gethostbyname('%s.%s'
-                                                  % (remotehost, self.ib_net))
+                        ip = socket.gethostbyname(nodenameToDomain(remotehost, self.ib_net))
                         use_ib = True
                     except:
                         pass
@@ -520,14 +549,17 @@ class NasDaemon:
                     zvol_name,
                     '-d',
                     '/dev/%s/%s' % (zpool_name, zvol_name),
-                    ip,
+                    initiator,
                 ]))
 
                 for line in out:
                     if 'Creating new target' in line:
                         start = 'Creating new target (name='.__len__()
                         iscsi_target = line[start:line.index(',')]
-
+                for line in out:
+                    if 'Created Target' in line:
+                        iscsi_target = line.split()[-1]
+		
                 # print 'XXX Mapped %s to iscsi target %s' % (zvol_name,
                 # iscsi_target)
                 self.logger.debug('Mapped %s to iscsi target %s'
@@ -560,7 +592,7 @@ class NasDaemon:
                 self.queue_connector.publish_message(json.dumps({
                     'action': 'map_zvol',
                     'target': iscsi_target,
-                    'nas': ('%s.%s' % (self.NODE_NAME,
+                    'nas': (nodenameToDomain(self.NODE_NAME,
                                        self.ib_net) if use_ib else self.NODE_NAME),
                     'size': message['size'],
                     'zvol': zvol_name,
@@ -889,7 +921,7 @@ class NasDaemon:
         args = ['/opt/rocks/bin/snapshot_upload.sh', 
                 '-p', zpool, 
                 '-v', zvol, 
-                '-r', remotehost,
+                '-r', nodenameToDomain(remotehost, self.ib_net),
                 '-y', remotezpool,
                 '-u', self.imgUser]
         upload_speed = self.getZvolAttr(zvol,'uploadspeed')
@@ -910,7 +942,7 @@ class NasDaemon:
         args = ['/opt/rocks/bin/snapshot_download.sh', 
                     '-p', zpool, 
                     '-v', zvol, 
-                    '-r', remotehost,
+                    '-r', nodenameToDomain(remotehost, self.ib_net),
                     '-y', remotezpool,
                     '-u', self.imgUser]
         if(is_delete_remote):
@@ -924,8 +956,13 @@ class NasDaemon:
 
         runCommand(args)
         
-    def detach_target(self, target, is_remove_host):
-        if target:
+    def delete_target(self,target):
+        all_targets = get_iscsi_targets()
+        if target in all_targets:
+            runCommand(['targetcli','iscsi/','delete', target])
+            
+    def delete_target_orig(self,target):
+        if target: 
             tgt_num = self.find_iscsi_target_num(target)
             if tgt_num:
 
@@ -944,7 +981,8 @@ class NasDaemon:
                     '--tid',
                     tgt_num,
                 ])
-
+    def detach_target(self, target, is_remove_host):
+        self.delete_target(target)
         with sqlite3.connect(self.SQLITE_DB) as con:
             cur = con.cursor()
             if is_remove_host:
@@ -1027,6 +1065,7 @@ class NasDaemon:
             con.commit()
 
     def find_iscsi_target_num(self, target):
+        """ This is only called of using tgt """
         out = runCommand(['tgtadm', '--op', 'show', '--mode', 'target'])
         for line in out:
             if line.startswith('Target ') and line.split()[2] == target:
