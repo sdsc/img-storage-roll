@@ -1,5 +1,5 @@
 NAME = img-storage-nas
-RELEASE = 3
+RELEASE = 4
 RPM.ARCH	= noarch
 RPM.FILES = \
 /etc/rc.d/init.d/* \n \

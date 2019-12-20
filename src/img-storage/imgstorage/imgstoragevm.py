@@ -1,14 +1,15 @@
 #!/opt/rocks/bin/python
+#
 # @Copyright@
-# 
-# 				Rocks(r)
-# 		         www.rocksclusters.org
-# 		         version 6.2 (SideWinder)
-# 		         version 7.0 (Manzanita)
-# 
+#
+#                                 Rocks(r)
+#                          www.rocksclusters.org
+#                          version 6.2 (SideWinder)
+#                          version 7.0 (Manzanita)
+#
 # Copyright (c) 2000 - 2017 The Regents of the University of California.
-# All rights reserved.	
-# 
+# All rights reserved.
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
@@ -22,12 +23,12 @@
 # with the distribution.
 # 
 # 3. All advertising and press materials, printed or electronic, mentioning
-# features or use of this software must display the following acknowledgement: 
-# 
-# 	"This product includes software developed by the Rocks(r)
-# 	Cluster Group at the San Diego Supercomputer Center at the
-# 	University of California, San Diego and its contributors."
-# 
+# features or use of this software must display the following acknowledgement:
+#
+#         "This product includes software developed by the Rocks(r)
+#         Cluster Group at the San Diego Supercomputer Center at the
+#         University of California, San Diego and its contributors."
+#
 # 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
 # neither the name or logo of this software nor the names of its
 # authors may be used to endorse or promote products derived from this
@@ -38,8 +39,8 @@
 # Transfer & Intellectual Property Services, University of California, 
 # San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910, 
 # Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
-# 
-# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 # PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
@@ -53,6 +54,7 @@
 # 
 # @Copyright@
 #
+
 from rabbitmqclient import RabbitMQCommonClient
 from imgstorage import *
 import imgstorage
@@ -107,7 +109,7 @@ def get_blk_dev_list():
             if 'Target: ' in line:
                 cur_target = line.split()[1]
             if 'Attached scsi disk ' in line:
-                blockdev = line.split()[3] 
+                blockdev = line.split()[3]
                 mappings[cur_target] = blockdev
     except:
         return {}
@@ -248,8 +250,8 @@ class VmDaemon:
 
             with sqlite3.connect(self.SQLITE_DB) as con:
                 cur = con.cursor()
-                cur.execute('''INSERT OR REPLACE INTO 
-                    zvols(zvol,zpool,nas,iscsi_target,sync) 
+                cur.execute('''INSERT OR REPLACE INTO
+                    zvols(zvol,zpool,nas,iscsi_target,sync)
                     VALUES (?,?,?,?,?) '''
                             , (zvol, pool, nas, target, sync))
                 con.commit()
@@ -312,18 +314,18 @@ class VmDaemon:
     def list_initiator(self, message, properties):
         try:
             f = open("/etc/iscsi/initiatorname.iscsi")
-            lines = filter(lambda x: 'InitiatorName' in x, 
+            lines = filter(lambda x: 'InitiatorName' in x,
                         [l.strip() for l in f.readlines()])
-            name = lines[0].split('=')[-1] 
+            name = lines[0].split('=')[-1]
             self.queue_connector.publish_message(
-                json.dumps({'action': 'zvol_list', 'status': 'success', 
-                    'body': name}), 
+                json.dumps({'action': 'zvol_list', 'status': 'success',
+                    'body': name}),
                 exchange='', routing_key=properties.reply_to)
         except:
             self.queue_connector.publish_message(
-                json.dumps({'status': 'error', 'error': 'no initiator name'}), 
+                json.dumps({'status': 'error', 'error': 'no initiator name'}),
                 exchange='', routing_key=properties.reply_to)
-            
+
     def list_dev(self, message, props):
         mappings = self.get_dev_list()
         self.logger.debug('Got mappings %s' % mappings)
@@ -335,10 +337,10 @@ class VmDaemon:
         }), exchange='', routing_key=props.reply_to)
 
     def get_dev_list(self):
-        """ return of dictionary of information about various devices 
+        """ return of dictionary of information about various devices
             Keys:  volume -- zvolume or generic iscsi (labeled volume<n>)
                    sync -- iscsi or sync, depending on type
-                   target -- iscsi target 
+                   target -- iscsi target
                    device -- local device name
                    --- following keys are only for sync-type volumes
                    status
@@ -439,7 +441,7 @@ class VmDaemon:
                     '-l'])
                 self.logger.debug('iscsi login: %s' % str(cmdoutput))
                 break
-        if cmdoutput is None: 
+        if cmdoutput is None:
             raise ActionError('Could not find iSCSI target %s on server %s'
                         % (iscsi_target, node_name))
         else:
@@ -537,9 +539,9 @@ class VmDaemon:
     def run_sync(self):
         with sqlite3.connect(self.SQLITE_DB) as con:
             cur = con.cursor()
-            cur.execute('''SELECT zvol, iscsi_target, 
+            cur.execute('''SELECT zvol, iscsi_target,
                             devsize, reply_to,
-                            correlation_id, started 
+                            correlation_id, started
                             FROM sync_queue ORDER BY time ASC LIMIT 1'''
                         )
             row = cur.fetchone()
@@ -658,10 +660,10 @@ class VmDaemon:
                           sync BOOLEAN)''')
 
             cur.execute('''CREATE TABLE IF NOT EXISTS sync_queue(
-                                zvol TEXT PRIMARY KEY NOT NULL, 
-                                iscsi_target TEXT UNIQUE, 
-                                devsize INT, reply_to TEXT, 
-                                correlation_id TEXT, 
+                                zvol TEXT PRIMARY KEY NOT NULL,
+                                iscsi_target TEXT UNIQUE,
+                                devsize INT, reply_to TEXT,
+                                correlation_id TEXT,
                                 started BOOLEAN default 0, time INT)'''
                         )
             con.commit()

@@ -1,5 +1,5 @@
 ROLLNAME	= img-storage
-VERSION		= 1.2
+VERSION		= 1.3
 RELEASE		= 0
 COLOR		= bisque
 
