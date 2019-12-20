@@ -1,5 +1,5 @@
 [Unit]
-Descriptions=Image Storage NAS Service
+Description=Image Storage NAS Service
 After=network.service
 
 [Service]

@@ -1,5 +1,5 @@
 [Unit]
-Descriptions=Image Storage Client Service
+Description=Image Storage Client Service
 After=network.service
 
 [Service]
