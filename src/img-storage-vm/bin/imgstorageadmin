@@ -2,12 +2,12 @@
 #
 # @Copyright@
 #
-#                               Rocks(r)
-#                        www.rocksclusters.org
-#                        version 5.6 (Emerald Boa)
-#                        version 6.1 (Emerald Boa)
+#                                 Rocks(r)
+#                          www.rocksclusters.org
+#                          version 6.2 (SideWinder)
+#                          version 7.0 (Manzanita)
 #
-# Copyright (c) 2000 - 2013 The Regents of the University of California.
+# Copyright (c) 2000 - 2017 The Regents of the University of California.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -25,9 +25,9 @@
 # 3. All advertising and press materials, printed or electronic, mentioning
 # features or use of this software must display the following acknowledgement:
 #
-#       "This product includes software developed by the Rocks(r)
-#       Cluster Group at the San Diego Supercomputer Center at the
-#       University of California, San Diego and its contributors."
+#         "This product includes software developed by the Rocks(r)
+#         Cluster Group at the San Diego Supercomputer Center at the
+#         University of California, San Diego and its contributors."
 #
 # 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
 # neither the name or logo of this software nor the names of its
@@ -40,7 +40,7 @@
 # San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910,
 # Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
 #
-# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 # PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
@@ -54,6 +54,7 @@
 #
 # @Copyright@
 #
+
 from imgstorage import runCommand, ActionError, ZvolBusyActionError
 import logging
 
@@ -75,10 +76,10 @@ def main(argv):
     if(confirm('Unmap iSCSI target?', True)):
         rhost = raw_input("From which NAS? (Don't forget .ibnet if used) ")
         if rhost:
-            try: 
+            try:
                 iscsi_targets = runCommand(['iscsiadm', '-m', 'discovery', '-t', 'sendtargets', '-p', rhost])
                 linenum = 0
-                for line in iscsi_targets: 
+                for line in iscsi_targets:
                     print linenum, line
                     linenum+=1
                 ans_arr = raw_input("Which target would you like to delete? (number)").split()
@@ -99,10 +100,10 @@ def main(argv):
         print '===================================='
 
     if(confirm('Destroy lvm?', True)):
-        try: 
+        try:
             lvms = runCommand(['dmsetup', 'status'])
             linenum = 0
-            for line in lvms: 
+            for line in lvms:
                 print linenum, line
                 linenum += 1
             ans_arr = raw_input("Which lvm would you like to destroy? (number)").split()
@@ -114,12 +115,12 @@ def main(argv):
         except ActionError, e: logger.exception(e)
         print '===================================='
 
- 
+
     if(confirm('Remove zvol?', True)):
-        try: 
+        try:
             zvols = runCommand(['zfs', 'list', '-Hpr', '-o', 'name'])
             linenum = 0
-            for line in zvols: 
+            for line in zvols:
                 print linenum, line
                 linenum += 1
             ans_arr = raw_input("Which zvol would you like to delete? (number)").split()
@@ -149,17 +150,17 @@ def confirm(prompt=None, resp=False):
     user simply types ENTER.
 
     >>> confirm(prompt='Create Directory?', resp=True)
-    Create Directory? [y]|n: 
+    Create Directory? [y]|n:
     True
     >>> confirm(prompt='Create Directory?', resp=False)
-    Create Directory? [n]|y: 
+    Create Directory? [n]|y:
     False
     >>> confirm(prompt='Create Directory?', resp=False)
     Create Directory? [n]|y: y
     True
 
     """
-    
+
     if prompt is None:
         prompt = 'Confirm'
 
@@ -167,7 +168,7 @@ def confirm(prompt=None, resp=False):
         prompt = '%s [%s]|%s: ' % (prompt, 'y', 'n')
     else:
         prompt = '%s [%s]|%s: ' % (prompt, 'n', 'y')
-        
+
     while True:
         ans = raw_input(prompt)
         if not ans:
@@ -183,4 +184,3 @@ def confirm(prompt=None, resp=False):
 
 if __name__ == "__main__":
    main(sys.argv[1:])
-
