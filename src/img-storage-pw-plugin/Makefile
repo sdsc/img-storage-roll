@@ -66,9 +66,6 @@ build:
 install::
 	mkdir -p $(ROOT)/$(PLUGINDIR)
 	install $(PLUGIN) $(ROOT)/$(PLUGINDIR)
-	echo $(PLUGINDIR)/$(PLUGIN) > $(RPM.FILESLIST)
 	
-
 clean::
 	-rm -rf $(NAME)-$(VERSION)
-	-rm $(RPM.FILESLIST) 

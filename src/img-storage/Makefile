@@ -83,6 +83,8 @@ myenv = ROCKS_VERSION=$(ROCKS_VERSION)
 ROOT ?= /
 
 build:: rocks-copyright.txt
+	mkdir -p ../../RPMS/x86_64
+	# cd ../../RPMS/x86_64 && curl -O http://dl.fedoraproject.org/pub/epel/$(PV_RPM)
 
 install:: build
 	#test "$(ROOT)" && \

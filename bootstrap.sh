@@ -1,7 +1,8 @@
-#! /bin/sh
-# 
-# Get the architecture of the system and convert the string into one
-# of ia64 or i386.
+#!/bin/sh
+#
+# This file should remain OS independent
+#
+# $Id: bootstrap.sh,v 1.3 2012/11/27 00:49:07 phil Exp $
 #
 # @Copyright@
 # 
@@ -56,86 +57,6 @@
 # 
 # @Copyright@
 #
-# $Log: arch,v $
-# Revision 1.5  2012/11/27 00:48:32  phil
-# Copyright Storm for Emerald Boa
-#
-# Revision 1.4  2012/05/06 05:48:39  phil
-# Copyright Storm for Mamba
-#
-# Revision 1.3  2011/07/23 02:30:43  phil
-# Viper Copyright
-#
-# Revision 1.2  2010/09/07 23:53:04  bruno
-# star power for gb
-#
-# Revision 1.1  2010/06/22 21:07:44  mjk
-# build env moving into base roll
-#
-# Revision 1.15  2009/05/01 19:06:45  mjk
-# chimi con queso
-#
-# Revision 1.14  2008/10/18 00:55:43  mjk
-# copyright 5.1
-#
-# Revision 1.13  2008/03/06 23:41:28  mjk
-# copyright storm on
-#
-# Revision 1.12  2007/10/10 23:10:54  anoop
-# New Arch i86pc supported. Does not fall back to i386
-#
-# Revision 1.11  2007/06/23 04:03:16  mjk
-# mars hill copyright
-#
-# Revision 1.10  2006/09/11 22:46:51  mjk
-# monkey face copyright
-#
-# Revision 1.9  2006/08/10 00:09:12  mjk
-# 4.2 copyright
-#
-# Revision 1.8  2006/06/21 22:52:44  nadya
-# add solaris
-#
-# Revision 1.7  2005/12/30 20:43:17  mjk
-# *** empty log message ***
-#
-# Revision 1.6  2005/10/12 18:08:18  mjk
-# final copyright for 4.1
-#
-# Revision 1.5  2005/09/16 01:02:00  mjk
-# updated copyright
-#
-# Revision 1.4  2003/08/31 02:11:52  fds
-# Simpler.
-#
-# Revision 1.3  2003/08/11 20:49:59  mjk
-# added opteron support
-#
-# Revision 1.2  2003/01/28 22:02:38  mjk
-# updated copyright
-# added "ppc" as an architecture (macosx)
-#
-  
 
-ARCH='unknown'
-
-if [ -x /bin/arch ]; then
-    ARCH=`/bin/arch`
-elif [ -x /usr/bin/arch ]; then
-    ARCH=`/usr/bin/arch`
-fi
-
-case $ARCH in
-    i386|i486|i586|i686)
-        echo i386
-        ;;
-    i86pc)
-        echo $ARCH
-        ;;
-    x86_64|ia64|ppc)
-        echo $ARCH
-        ;;
-    *)
-        echo unknown
-        ;;
-esac
+. $ROLLSROOT/etc/bootstrap-functions.sh
+/usr/bin/yum -y  install texlive-titlesec texlive-framed texlive-threeparttable texlive-wrapfig texlive-multirow
