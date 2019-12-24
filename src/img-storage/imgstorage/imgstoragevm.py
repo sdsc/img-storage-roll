@@ -1,14 +1,15 @@
 #!/opt/rocks/bin/python
+#
 # @Copyright@
-# 
-# 				Rocks(r)
-# 		         www.rocksclusters.org
-# 		         version 6.2 (SideWinder)
-# 		         version 7.0 (Manzanita)
-# 
+#
+#                                 Rocks(r)
+#                          www.rocksclusters.org
+#                          version 6.2 (SideWinder)
+#                          version 7.0 (Manzanita)
+#
 # Copyright (c) 2000 - 2017 The Regents of the University of California.
-# All rights reserved.	
-# 
+# All rights reserved.
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
@@ -22,12 +23,12 @@
 # with the distribution.
 # 
 # 3. All advertising and press materials, printed or electronic, mentioning
-# features or use of this software must display the following acknowledgement: 
-# 
-# 	"This product includes software developed by the Rocks(r)
-# 	Cluster Group at the San Diego Supercomputer Center at the
-# 	University of California, San Diego and its contributors."
-# 
+# features or use of this software must display the following acknowledgement:
+#
+#         "This product includes software developed by the Rocks(r)
+#         Cluster Group at the San Diego Supercomputer Center at the
+#         University of California, San Diego and its contributors."
+#
 # 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
 # neither the name or logo of this software nor the names of its
 # authors may be used to endorse or promote products derived from this
@@ -38,8 +39,8 @@
 # Transfer & Intellectual Property Services, University of California, 
 # San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910, 
 # Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
-# 
-# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 # PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
@@ -53,6 +54,7 @@
 # 
 # @Copyright@
 #
+
 from rabbitmqclient import RabbitMQCommonClient
 from imgstorage import *
 import imgstorage
@@ -89,6 +91,7 @@ from pysqlite2 import dbapi2 as sqlite3
 #       map_zvol:  zpool, zvol, remotehost, remotepoool, sync
 #       unmap_zvol:  zvol
 #       list_dev:
+#       list_initiator:
 #       sync_zvol
 #
 # Send Messages:
@@ -104,12 +107,10 @@ def get_blk_dev_list():
         cur_target = None
         for line in out:
             if 'Target: ' in line:
-                cur_target = re.search(r'Target: ([\w\-\.]*)', line,
-                                       re.M).group(1)
+                cur_target = line.split()[1]
             if 'Attached scsi disk ' in line:
-                blockdev = re.search(r'Attached scsi disk (\w*)', line,
-                                     re.M)
-                mappings[cur_target] = blockdev.group(1)
+                blockdev = line.split()[3]
+                mappings[cur_target] = blockdev
     except:
         return {}
 
@@ -154,12 +155,19 @@ class VmDaemon:
         self.function_dict = {
             'map_zvol': self.map_zvol,
             'unmap_zvol': self.unmap_zvol,
+            'list_initiator': self.list_initiator,
             'list_dev': self.list_dev,
             'sync_zvol': self.sync_zvol,
         }
         self.logger = \
             logging.getLogger('imgstorage.imgstoragevm.VmDaemon')
         self.SQLITE_DB = '/opt/rocks/var/img_storage.db'
+
+        self.ssl_options = self.nc.DATA.get("ssl_options", False)
+        if(self.ssl_options):
+            self.ssl_options = json.loads(self.ssl_options)
+        self.use_encryption = self.nc.DATA.get("use_encryption", False)
+        self.secur_server = self.nc.DATA.get("secur_server", False)
 
         self.SYNC_CHECK_TIMEOUT = 10
 
@@ -242,8 +250,8 @@ class VmDaemon:
 
             with sqlite3.connect(self.SQLITE_DB) as con:
                 cur = con.cursor()
-                cur.execute('''INSERT OR REPLACE INTO 
-                    zvols(zvol,zpool,nas,iscsi_target,sync) 
+                cur.execute('''INSERT OR REPLACE INTO
+                    zvols(zvol,zpool,nas,iscsi_target,sync)
                     VALUES (?,?,?,?,?) '''
                             , (zvol, pool, nas, target, sync))
                 con.commit()
@@ -257,7 +265,7 @@ class VmDaemon:
                     except:
                         pass
                 runCommand(zfs_create + ['-V', '%sgb'
-                                         % message['size'], '%s/%s' % (pool,
+                                         % message['size'], '-s', '%s/%s' % (pool,
                                                                        zvol)])
                 runCommand(zfs_create + ['-V', '%sgb'
                                          % temp_size_cur, '-s', '%s/%s-temp-write'
@@ -303,6 +311,21 @@ class VmDaemon:
             }), props.reply_to, reply_to=self.NODE_NAME,
                 correlation_id=props.message_id)
 
+    def list_initiator(self, message, properties):
+        try:
+            f = open("/etc/iscsi/initiatorname.iscsi")
+            lines = filter(lambda x: 'InitiatorName' in x,
+                        [l.strip() for l in f.readlines()])
+            name = lines[0].split('=')[-1]
+            self.queue_connector.publish_message(
+                json.dumps({'action': 'zvol_list', 'status': 'success',
+                    'body': name}),
+                exchange='', routing_key=properties.reply_to)
+        except:
+            self.queue_connector.publish_message(
+                json.dumps({'status': 'error', 'error': 'no initiator name'}),
+                exchange='', routing_key=properties.reply_to)
+
     def list_dev(self, message, props):
         mappings = self.get_dev_list()
         self.logger.debug('Got mappings %s' % mappings)
@@ -314,10 +337,10 @@ class VmDaemon:
         }), exchange='', routing_key=props.reply_to)
 
     def get_dev_list(self):
-        """ return of dictionary of information about various devices 
+        """ return of dictionary of information about various devices
             Keys:  volume -- zvolume or generic iscsi (labeled volume<n>)
                    sync -- iscsi or sync, depending on type
-                   target -- iscsi target 
+                   target -- iscsi target
                    device -- local device name
                    --- following keys are only for sync-type volumes
                    status
@@ -399,11 +422,15 @@ class VmDaemon:
             node_name,
         ])
         self.logger.debug('Looking for target in iscsiadm output')
+	cmdoutput = None
         for line in connect_out:
-            if iscsi_target in line:  # has the target
-                self.logger.debug('Found iscsi target in iscsiadm output'
-                                  )
-                return runCommand([
+            parts = line.strip().split()
+            self.logger.debug('discovery target: "%s"' % iscsi_target)
+            self.logger.debug('discovery output: %s' % str(parts))
+            self.logger.debug('discovery test: %s' % str(iscsi_target in parts))
+            if iscsi_target in parts:  # has the target
+                self.logger.debug('Found iscsi target in iscsiadm output')
+                cmdoutput = runCommand([
                     'iscsiadm',
                     '-m',
                     'node',
@@ -411,10 +438,14 @@ class VmDaemon:
                     iscsi_target,
                     '-p',
                     node_name,
-                    '-l',
-                ])
-        raise ActionError('Could not find iSCSI target %s on compute node %s'
-                          % (iscsi_target, node_name))
+                    '-l'])
+                self.logger.debug('iscsi login: %s' % str(cmdoutput))
+                break
+        if cmdoutput is None:
+            raise ActionError('Could not find iSCSI target %s on server %s'
+                        % (iscsi_target, node_name))
+        else:
+            return cmdoutput
 
     def unmap_zvol(self, message, props):
         """ Received zvol unmap_zvol command from nas """
@@ -508,9 +539,9 @@ class VmDaemon:
     def run_sync(self):
         with sqlite3.connect(self.SQLITE_DB) as con:
             cur = con.cursor()
-            cur.execute('''SELECT zvol, iscsi_target, 
+            cur.execute('''SELECT zvol, iscsi_target,
                             devsize, reply_to,
-                            correlation_id, started 
+                            correlation_id, started
                             FROM sync_queue ORDER BY time ASC LIMIT 1'''
                         )
             row = cur.fetchone()
@@ -629,10 +660,10 @@ class VmDaemon:
                           sync BOOLEAN)''')
 
             cur.execute('''CREATE TABLE IF NOT EXISTS sync_queue(
-                                zvol TEXT PRIMARY KEY NOT NULL, 
-                                iscsi_target TEXT UNIQUE, 
-                                devsize INT, reply_to TEXT, 
-                                correlation_id TEXT, 
+                                zvol TEXT PRIMARY KEY NOT NULL,
+                                iscsi_target TEXT UNIQUE,
+                                devsize INT, reply_to TEXT,
+                                correlation_id TEXT,
                                 started BOOLEAN default 0, time INT)'''
                         )
             con.commit()
@@ -641,7 +672,12 @@ class VmDaemon:
                                                     'direct', "img-storage", "img-storage",
                                                     self.process_message, lambda a:
                                                     self.run_sync(),
-                                                    routing_key=self.nc.NODE_NAME)
+                                                    routing_key=self.nc.NODE_NAME,
+                                                    ssl = True,
+                                                    ssl_options = self.ssl_options,
+                                                    encryption = self.use_encryption,
+                                                    frontend = self.nc.FRONTEND_NAME,
+                                                    secur_server = self.secur_server)
         self.queue_connector.run()
 
     def stop(self):

@@ -1,15 +1,15 @@
 #!/bin/bash
 #
 # @Copyright@
-# 
-# 				Rocks(r)
-# 		         www.rocksclusters.org
-# 		         version 6.2 (SideWinder)
-# 		         version 7.0 (Manzanita)
-# 
+#
+#                                 Rocks(r)
+#                          www.rocksclusters.org
+#                          version 6.2 (SideWinder)
+#                          version 7.0 (Manzanita)
+#
 # Copyright (c) 2000 - 2017 The Regents of the University of California.
-# All rights reserved.	
-# 
+# All rights reserved.
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
@@ -23,12 +23,12 @@
 # with the distribution.
 # 
 # 3. All advertising and press materials, printed or electronic, mentioning
-# features or use of this software must display the following acknowledgement: 
-# 
-# 	"This product includes software developed by the Rocks(r)
-# 	Cluster Group at the San Diego Supercomputer Center at the
-# 	University of California, San Diego and its contributors."
-# 
+# features or use of this software must display the following acknowledgement:
+#
+#         "This product includes software developed by the Rocks(r)
+#         Cluster Group at the San Diego Supercomputer Center at the
+#         University of California, San Diego and its contributors."
+#
 # 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
 # neither the name or logo of this software nor the names of its
 # authors may be used to endorse or promote products derived from this
@@ -39,8 +39,8 @@
 # Transfer & Intellectual Property Services, University of California, 
 # San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910, 
 # Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
-# 
-# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 # PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
@@ -61,16 +61,48 @@
 
 
 (
+  # Process command line params
+  while (( "$#")); do
+	case $1 in
+		"-d")   shift;
+			DEV=$1;
+			;;
+		"-n")   shift;
+			NAME=$1;
+			;;
+		  *)	INITIATOR=$1;
+			;;
+	esac
+	shift
+  done
+
   # Wait for lock on /var/lock/.tgt-setup-lun-lock.exclusivelock
   flock 200 || exit 1
 
   # lock acquired
   echo "lock acquired" >> /tmp/locklog
   echo "running: ${@}" >> /tmp/locklog
-  tgt-setup-lun "${@}"
-  
+  # tgt-setup-lun "${@}"
+  BSTORE=$(targetcli backstores/block create $NAME $DEV 2>&1)
+  TGOUTPUT=$(targetcli iscsi/ create | grep -i "created target" | awk '{print $NF}')
+  TARGET=${TGOUTPUT::-1}
+  if [ "x$TARGET" != x ]; then
+     LUN=$(targetcli iscsi/$TARGET/tpg1/luns create /backstores/block/$NAME 2>&1)
+     if [ $? != 0 ]; then
+        >&2 echo $LUN
+        exit -1
+     fi
+     ACL=$(targetcli iscsi/$TARGET/tpg1/acls create $INITIATOR 2>&1)
+     if [ $? == 0 ]; then
+        echo "Created Target $TARGET"
+     else
+        >&2 echo $LUN
+        exit -1
+     fi
+  else
+     >&2 echo "error creating target: $TGOUTPUT"
+     exit -1
+  fi
+
 
 ) 200>/var/lock/.tgt-setup-lun-lock.exclusivelock
-
-
-

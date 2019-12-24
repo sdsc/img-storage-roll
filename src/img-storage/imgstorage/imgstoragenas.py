@@ -1,14 +1,15 @@
 #!/opt/rocks/bin/python
+#
 # @Copyright@
-# 
-# 				Rocks(r)
-# 		         www.rocksclusters.org
-# 		         version 6.2 (SideWinder)
-# 		         version 7.0 (Manzanita)
-# 
+#
+#                                 Rocks(r)
+#                          www.rocksclusters.org
+#                          version 6.2 (SideWinder)
+#                          version 7.0 (Manzanita)
+#
 # Copyright (c) 2000 - 2017 The Regents of the University of California.
-# All rights reserved.	
-# 
+# All rights reserved.
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are
 # met:
@@ -22,12 +23,12 @@
 # with the distribution.
 # 
 # 3. All advertising and press materials, printed or electronic, mentioning
-# features or use of this software must display the following acknowledgement: 
-# 
-# 	"This product includes software developed by the Rocks(r)
-# 	Cluster Group at the San Diego Supercomputer Center at the
-# 	University of California, San Diego and its contributors."
-# 
+# features or use of this software must display the following acknowledgement:
+#
+#         "This product includes software developed by the Rocks(r)
+#         Cluster Group at the San Diego Supercomputer Center at the
+#         University of California, San Diego and its contributors."
+#
 # 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
 # neither the name or logo of this software nor the names of its
 # authors may be used to endorse or promote products derived from this
@@ -38,8 +39,8 @@
 # Transfer & Intellectual Property Services, University of California, 
 # San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910, 
 # Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
-# 
-# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
 # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 # PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
@@ -66,7 +67,7 @@
 # msg formats
 #
 # Receive Messages:
-#       map_zvol:  zpool, zvol, remotehost, remotepoool, sync
+#       map_zvol:  zpool, zvol, remotehost, remotepoool, sync, initiator
 #       unmap_zvol:  zvol     XXX: really should have pool, too.
 #       del_zvol: zvol, zpool
 #       list_zvols:
@@ -100,6 +101,7 @@ import sys
 import signal
 import pika
 import socket
+import rocks
 import rocks.util
 import uuid
 
@@ -109,7 +111,7 @@ from tornado.gen import Task, Return, coroutine
 import tornado.process
 
 
-def get_iscsi_targets():
+def get_iscsi_targets_orig():
     """return a list of all the active target the dictionary keys
     are the target names and the data is their associated TID"""
 
@@ -117,9 +119,20 @@ def get_iscsi_targets():
     ret = []
     for line in out:
         if line.startswith('Target ') and len(line.split()) >= 2:
-            ret.append(line.split()[2])
+            ret.append(line.split()[1])
     return ret
 
+def get_iscsi_targets():
+    """return a list of all the active target the dictionary keys
+    are the target names and the data is their associated TID"""
+
+    out = runCommand(['targetcli', 'iscsi/', 'ls'])
+    print out
+    ret = []
+    for line in out:
+        if 'TPG' in line and len(line.split()) >= 2:
+            ret.append(line.split()[1])
+    return ret
 
 STREAM = tornado.process.Subprocess.STREAM
 
@@ -201,6 +214,12 @@ class NasDaemon:
         self.SYNC_PULL_TIMEOUT = 60
         # the default SYNC_PULL is 5 minutes
         self.SYNC_PULL_DEFAULT = 60 * 5
+
+        self.ssl_options = self.nc.DATA.get("ssl_options", False)
+        if(self.ssl_options):
+            self.ssl_options = json.loads(self.ssl_options)
+        self.use_encryption = self.nc.DATA.get("use_encryption", False)
+        self.secur_server = self.nc.DATA.get("secur_server", False)
 
         self.logger = \
             logging.getLogger('imgstorage.imgstoragenas.NasDaemon')
@@ -420,7 +439,13 @@ class NasDaemon:
                                                     'direct', "img-storage", "img-storage",
                                                     self.process_message, lambda a:
                                                     self.startup(),
-                                                    routing_key=self.nc.NODE_NAME)
+                                                    routing_key=self.nc.NODE_NAME,
+                                                    ssl = True,
+                                                    ssl_options = self.ssl_options,
+                                                    encryption = self.use_encryption,
+                                                    frontend = self.nc.FRONTEND_NAME,
+                                                    secur_server = self.secur_server
+                                                    )
         self.queue_connector.run()
 
     def failAction(
@@ -450,6 +475,12 @@ class NasDaemon:
         zpool_name = message['zpool']
         zvol_name = message['zvol']
         sync = message['sync']
+        try:
+             initiator = message['initiator']
+        except:
+             raise ActionError(
+                'Error when setting up: no initiator specified')
+
 
         # print "XXX map_zvol (message): ", message
         self.logger.debug('Setting zvol %s' % zvol_name)
@@ -480,8 +511,8 @@ class NasDaemon:
                         self.logger.debug('Vol %s exists' % volume)
 
                     # Record the creation of the volume
-                    cur.execute('''INSERT OR REPLACE INTO 
-                                zvols(zvol,zpool,iscsi_target,remotehost,remotepool,sync) 
+                    cur.execute('''INSERT OR REPLACE INTO
+                                zvols(zvol,zpool,iscsi_target,remotehost,remotepool,sync)
                                 VALUES (?,?,?,?,?,?) '''
                                 , (zvol_name, zpool_name, None, None, None, False))
                     con.commit()
@@ -500,8 +531,7 @@ class NasDaemon:
 
                 if self.ib_net:
                     try:
-                        ip = socket.gethostbyname('%s.%s'
-                                                  % (remotehost, self.ib_net))
+                        ip = socket.gethostbyname(nodenameToDomain(remotehost, self.ib_net))
                         use_ib = True
                     except:
                         pass
@@ -520,13 +550,16 @@ class NasDaemon:
                     zvol_name,
                     '-d',
                     '/dev/%s/%s' % (zpool_name, zvol_name),
-                    ip,
+                    initiator,
                 ]))
 
                 for line in out:
                     if 'Creating new target' in line:
                         start = 'Creating new target (name='.__len__()
                         iscsi_target = line[start:line.index(',')]
+                for line in out:
+                    if 'Created Target' in line:
+                        iscsi_target = line.split()[-1]
 
                 # print 'XXX Mapped %s to iscsi target %s' % (zvol_name,
                 # iscsi_target)
@@ -535,8 +568,8 @@ class NasDaemon:
 
                 # Update the Zvols table with the target, remote and sync
                 # attributes
-                cur.execute('''INSERT OR REPLACE INTO 
-                            zvols(zvol,zpool,iscsi_target,remotehost, remotepool,sync) 
+                cur.execute('''INSERT OR REPLACE INTO
+                            zvols(zvol,zpool,iscsi_target,remotehost, remotepool,sync)
                             VALUES (?,?,?,?,?,?) '''
                             , (zvol_name, zpool_name, iscsi_target, remotehost, remotepool, sync))
                 con.commit()
@@ -560,7 +593,7 @@ class NasDaemon:
                 self.queue_connector.publish_message(json.dumps({
                     'action': 'map_zvol',
                     'target': iscsi_target,
-                    'nas': ('%s.%s' % (self.NODE_NAME,
+                    'nas': (nodenameToDomain(self.NODE_NAME,
                                        self.ib_net) if use_ib else self.NODE_NAME),
                     'size': message['size'],
                     'zvol': zvol_name,
@@ -685,10 +718,10 @@ class NasDaemon:
                 else:
                     cur.execute(
                         'DELETE FROM sync_queue WHERE zvol = ?', [zvol])
-                    cur.execute('''INSERT INTO 
+                    cur.execute('''INSERT INTO
                                    sync_queue(zvol,zpool,remotehost,is_sending,is_delete_remote,time,remotepool)
-                                    SELECT zvol,?,?,1,1,?,remotepool 
-                                    FROM zvols 
+                                    SELECT zvol,?,?,1,1,?,remotepool
+                                    FROM zvols
                                     WHERE iscsi_target = ? '''
                                 , [zpool, props.reply_to, time.time(), target])
                     con.commit()
@@ -712,10 +745,10 @@ class NasDaemon:
 
                 # get request destination
 
-                cur.execute('''SELECT reply_to, zpool, remotepool, sync 
-                                FROM zvol_calls 
-                                JOIN zvols 
-                                ON zvol_calls.zvol = zvols.zvol 
+                cur.execute('''SELECT reply_to, zpool, remotepool, sync
+                                FROM zvol_calls
+                                JOIN zvols
+                                ON zvol_calls.zvol = zvols.zvol
                                 WHERE zvols.zvol = ?'''
                             , [zvol])
                 [reply_to, zpool, remotepool, sync] = cur.fetchone()
@@ -732,9 +765,9 @@ class NasDaemon:
                     cur.execute(
                         'UPDATE sync_queue SET is_delete_remote = 1 WHERE zvol = ?', [zvol])
                     if cur.rowcount == 0:
-                        cur.execute('''INSERT INTO 
+                        cur.execute('''INSERT INTO
                             sync_queue(zvol,zpool,remotehost,remotepool,is_sending,
-                            is_delete_remote, time)  
+                            is_delete_remote, time)
                             VALUES(?,?,?,?,0,1,?)''',
                                     [zvol, zpool, props.reply_to, remotepool,
                                      time.time()])
@@ -766,9 +799,9 @@ class NasDaemon:
                 for (zvol, job_result) in self.results.items():
                     if job_result.ready():
                         del self.results[zvol]
-                        cur.execute('''SELECT 
+                        cur.execute('''SELECT
                                        remotehost, is_sending, zvol, zpool, is_delete_remote,remotepool
-                                       FROM sync_queue 
+                                       FROM sync_queue
                                        WHERE zvol = ?'''
                                     , [zvol])
                         row = cur.fetchone()
@@ -809,9 +842,9 @@ class NasDaemon:
                             con.commit()
 
                 for row in \
-                    cur.execute('''SELECT remotehost, is_sending, zvol, 
-                                    zpool, is_delete_remote, remotepool 
-                                    FROM sync_queue 
+                    cur.execute('''SELECT remotehost, is_sending, zvol,
+                                    zpool, is_delete_remote, remotepool
+                                    FROM sync_queue
                                     ORDER BY time ASC'''
                                 ):
                     (remotehost, is_sending, zvol, zpool,
@@ -850,11 +883,11 @@ class NasDaemon:
                 # Select zvols whose time has come to sync
                 # if a nextsync has never been set, set one
                 cur.execute('''SELECT z.zvol, z.zpool, z.remotehost, z.remotepool,
-                               za.frequency,za.nextsync 
+                               za.frequency,za.nextsync
                                 FROM zvols z LEFT JOIN zvolattrs za ON
                                 z.zvol=za.zvol
-                                WHERE iscsi_target IS NULL 
-                                AND remotehost IS NOT NULL 
+                                WHERE iscsi_target IS NULL
+                                AND remotehost IS NOT NULL
                                 AND (nextsync is NULL  OR nextsync < %d)
                                 ORDER BY nextsync ASC, z.zvol DESC;''' % now
                             )
@@ -886,10 +919,10 @@ class NasDaemon:
         remotehost,
         remotezpool,
         ):
-        args = ['/opt/rocks/bin/snapshot_upload.sh', 
-                '-p', zpool, 
-                '-v', zvol, 
-                '-r', remotehost,
+        args = ['/opt/rocks/bin/snapshot_upload.sh',
+                '-p', zpool,
+                '-v', zvol,
+                '-r', nodenameToDomain(remotehost, self.ib_net),
                 '-y', remotezpool,
                 '-u', self.imgUser]
         upload_speed = self.getZvolAttr(zvol,'uploadspeed')
@@ -907,10 +940,10 @@ class NasDaemon:
         remotezpool,
         is_delete_remote,
         ):
-        args = ['/opt/rocks/bin/snapshot_download.sh', 
-                    '-p', zpool, 
-                    '-v', zvol, 
-                    '-r', remotehost,
+        args = ['/opt/rocks/bin/snapshot_download.sh',
+                    '-p', zpool,
+                    '-v', zvol,
+                    '-r', nodenameToDomain(remotehost, self.ib_net),
                     '-y', remotezpool,
                     '-u', self.imgUser]
         if(is_delete_remote):
@@ -923,8 +956,13 @@ class NasDaemon:
             args.extend(['-t', download_speed])
 
         runCommand(args)
-        
-    def detach_target(self, target, is_remove_host):
+
+    def delete_target(self,target):
+        all_targets = get_iscsi_targets()
+        if target in all_targets:
+            runCommand(['targetcli','iscsi/','delete', target])
+
+    def delete_target_orig(self,target):
         if target:
             tgt_num = self.find_iscsi_target_num(target)
             if tgt_num:
@@ -944,19 +982,20 @@ class NasDaemon:
                     '--tid',
                     tgt_num,
                 ])
-
+    def detach_target(self, target, is_remove_host):
+        self.delete_target(target)
         with sqlite3.connect(self.SQLITE_DB) as con:
             cur = con.cursor()
             if is_remove_host:
-                cur.execute('''UPDATE zvols 
-                                SET iscsi_target = NULL, 
-                                remotehost = NULL, 
-                                remotepool = NULL 
+                cur.execute('''UPDATE zvols
+                                SET iscsi_target = NULL,
+                                remotehost = NULL,
+                                remotepool = NULL
                                 where iscsi_target = ?'''
                             , [target])
             else:
-                cur.execute('''UPDATE zvols 
-                                SET iscsi_target = NULL 
+                cur.execute('''UPDATE zvols
+                                SET iscsi_target = NULL
                                 where iscsi_target = ?'''
                             , [target])
             con.commit()
@@ -973,11 +1012,11 @@ class NasDaemon:
     def list_zvols(self, message, properties):
         with sqlite3.connect(self.SQLITE_DB) as con:
             cur = con.cursor()
-            cur.execute('''SELECT z.zvol, z.zpool, z.iscsi_target, z.remotehost, 
-                           z.remotepool, s.is_sending, s.is_delete_remote, s.time, 
-                           za.nextsync, za.frequency, zc.zvol as locked FROM 
-                           zvols z LEFT JOIN zvolattrs za ON z.zvol=za.zvol 
-                           LEFT JOIN sync_queue s on z.zvol=s.zvol 
+            cur.execute('''SELECT z.zvol, z.zpool, z.iscsi_target, z.remotehost,
+                           z.remotepool, s.is_sending, s.is_delete_remote, s.time,
+                           za.nextsync, za.frequency, zc.zvol as locked FROM
+                           zvols z LEFT JOIN zvolattrs za ON z.zvol=za.zvol
+                           LEFT JOIN sync_queue s on z.zvol=s.zvol
                            LEFT JOIN zvol_calls zc ON z.zvol=zc.zvol'''
                         )
             r = [dict((cur.description[i][0], value) for (i, value) in
@@ -1027,6 +1066,7 @@ class NasDaemon:
             con.commit()
 
     def find_iscsi_target_num(self, target):
+        """ This is only called of using tgt """
         out = runCommand(['tgtadm', '--op', 'show', '--mode', 'target'])
         for line in out:
             if line.startswith('Target ') and line.split()[2] == target:
