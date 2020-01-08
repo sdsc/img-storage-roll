@@ -28,7 +28,7 @@
 /sbin/chkconfig img-storage-vm on
 </post>
 <post cond="rocks_version_major == 7">
-/usr/bin/systemctl enable img-storage-clien
+/usr/bin/systemctl enable img-storage-client
 </post>
 
 <post>
