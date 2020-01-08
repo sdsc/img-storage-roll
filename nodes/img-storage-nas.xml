@@ -43,6 +43,9 @@ mkdir /var/log/rocks
 <eval mode="xml">
 /opt/rocks/bin/rocks report host imgstorage &hostname;
 </eval>
+</post>
+
+<post cond="rocks_version_major == 6">
 <file name="/etc/rc.d/rocksconfig.d/post-55-restart-img-storage" perms="755">
 
 #!/bin/bash
@@ -59,8 +62,28 @@ done
 # after that the file will be there
 rm /etc/rc.d/rocksconfig.d/post-55-restart-img-storage
 </file>
+</post>
 
+<post cond="rocks_version_major == 7">
+<file name="/etc/rc.d/rocksconfig.d/post-55-restart-img-storage" perms="755">
 
+#!/bin/bash
+#
+# while for the config file to be ready
+
+while ! [ -f /opt/rocks/etc/rabbitmq.conf ] || ! [ -f /opt/rocks/etc/rabbitmq_img-storage.conf ] ; do
+	sleep 1;
+done
+
+/usr/bin/systemctl start img-storage-nas
+
+# we need this only the first boot after the installation
+# after that the file will be there
+rm /etc/rc.d/rocksconfig.d/post-55-restart-img-storage
+</file>
+</post>
+
+<post>
 <file name="/etc/udev/rules.d/91-zfs-permissions.rules" perms="644">
 ACTION=="add", KERNEL=="zfs", MODE="0660", GROUP="&imgstorage-group;"
 </file>
