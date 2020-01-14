@@ -3,9 +3,12 @@ Description=Image Storage NAS Service
 After=network.service
 
 [Service]
-Type=Daemon
+Type=idle
 ExecStart=/opt/rocks/bin/img-storage-nas start
 ExecStop=/opt/rocks/bin/img-storage-nas stop
+Restart=on-abort
+TimeoutStartSec=10
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
